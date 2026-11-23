@@ -10,7 +10,7 @@ type AgentState = "working" | "waiting" | "idle" | "standby" | "finished" | "sto
 
 const STATE: Record<AgentState, { label: string; cls: string }> = {
   working: { label: "Trabajando", cls: "text-ink" },
-  waiting: { label: "Esperando cuota de IA", cls: "text-warn" },
+  waiting: { label: "Esperando a la IA", cls: "text-warn" },
   standby: { label: "En espera de turno", cls: "text-muted" },
   idle: { label: "Sin empezar", cls: "text-faint" },
   finished: { label: "Ha terminado", cls: "text-ok" },
@@ -37,7 +37,7 @@ export function AgentCards({ run, events, waitingMs }: { run: Run; events: Event
 
           const line = active
             ? waitingMs > 0
-              ? `Límite de cuota gratuita alcanzado. Reintento en ${Math.ceil(waitingMs / 1000)} s.`
+              ? `El proveedor de IA gratuito no responde ahora (cuota o saturación). Reintento en ${Math.ceil(waitingMs / 1000)} s.`
               : (run.activity ?? "…")
             : (last?.message ?? "Todavía no ha intervenido.");
 

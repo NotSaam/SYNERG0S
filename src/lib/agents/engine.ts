@@ -3,7 +3,7 @@ import { NoObjectGeneratedError } from "ai";
 import type { z } from "zod";
 import { getDb } from "@/db";
 import { events, files, runs, tasks, type Run, type Task } from "@/db/schema";
-import { callAgent, RateLimitError } from "@/lib/llm";
+import { callAgent, ProviderBusyError } from "@/lib/llm";
 import type { AgentId, Assertion, CheckResult, ReviewIssue, TestReport } from "@/lib/types";
 import { isValidSelector, runAssertions, runStaticSuite, type Workspace } from "./harness";
 import {
@@ -34,6 +34,8 @@ import {
 
 export const MAX_ATTEMPTS = 4;
 const MAX_RETRIES = 3;
+/** Esperas seguidas al proveedor de IA (cuota o saturación) antes de detener la ejecución. */
+const MAX_BUSY_WAITS = 30;
 /** A partir de este intento la revisión de código deja de poder bloquear (evita bucles). */
 const LAST_BLOCKING_REVIEW = 2;
 
@@ -77,17 +79,40 @@ export async function advance(runId: string): Promise<StepOutcome> {
       return { state: "waiting", retryInMs: run.waitUntil.getTime() - Date.now() };
     }
     await step(ctx, run);
-    await db.update(runs).set({ retries: 0, waitUntil: null }).where(eq(runs.id, runId));
+    await db.update(runs).set({ retries: 0, busyWaits: 0, waitUntil: null }).where(eq(runs.id, runId));
     return { state: "advanced" };
   } catch (err) {
-    if (err instanceof RateLimitError) {
-      const seconds = Math.ceil(err.retryAfterMs / 1000);
+    if (err instanceof ProviderBusyError) {
+      const busyWaits = run.busyWaits + 1;
+      const why =
+        err.reason === "quota"
+          ? "ha alcanzado su límite de cuota gratuita"
+          : "está saturado y no responde";
+      if (busyWaits > MAX_BUSY_WAITS) {
+        const message = `El proveedor de IA ${why}. Se intentó ${MAX_BUSY_WAITS} veces seguidas; prueba a reintentar en unos minutos.`;
+        await db
+          .update(runs)
+          .set({ status: "failed", error: message, activeAgent: null, activity: null, finishedAt: new Date() })
+          .where(eq(runs.id, runId));
+        await log({ ...ctx, agent: "system" }, "error", message);
+        return { state: "finished" };
+      }
+      // La saturación va y viene en segundos: esperas cortas que crecen poco. Con cuota, lo que
+      // indique el proveedor.
+      const waitMs =
+        err.reason === "quota" ? err.retryAfterMs : Math.min(err.retryAfterMs + 1_500 * (busyWaits - 1), 15_000);
+      const seconds = Math.ceil(waitMs / 1000);
       await db
         .update(runs)
-        .set({ waitUntil: new Date(Date.now() + err.retryAfterMs) })
+        .set({ busyWaits, waitUntil: new Date(Date.now() + waitMs) })
         .where(eq(runs.id, runId));
-      await log(ctx, "wait", `El proveedor de IA ha alcanzado su límite de cuota gratuita. Reintento en ${seconds} s.`);
-      return { state: "waiting", retryInMs: err.retryAfterMs };
+      // Una línea por racha de esperas (y un recordatorio cada cinco) para no inundar la bitácora.
+      if (busyWaits === 1) {
+        await log(ctx, "wait", `El proveedor de IA ${why}. Espero y reintento hasta que responda.`);
+      } else if (busyWaits % 5 === 0) {
+        await log(ctx, "wait", `El proveedor de IA sigue sin responder (${busyWaits} intentos). Sigo reintentando; próximo en ${seconds} s.`);
+      }
+      return { state: "waiting", retryInMs: waitMs };
     }
 
     const retries = run.retries + 1;

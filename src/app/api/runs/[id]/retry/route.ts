@@ -20,7 +20,7 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/runs/[id]/
   const [anyTask] = await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.runId, id)).limit(1);
   await db
     .update(runs)
-    .set({ status: anyTask ? "running" : "queued", error: null, retries: 0, finishedAt: null, waitUntil: null })
+    .set({ status: anyTask ? "running" : "queued", error: null, retries: 0, busyWaits: 0, finishedAt: null, waitUntil: null })
     .where(eq(runs.id, id));
   await db.insert(events).values({
     runId: id,

@@ -47,7 +47,7 @@ Vercel no ejecuta procesos largos, así que el equipo no es un bucle en memoria.
 - Un cerrojo atómico (`UPDATE … WHERE lock_until < now() RETURNING`) garantiza que solo una invocación avanza cada ejecución, aunque haya varias pestañas abiertas.
 - Cada turno es idempotente: el estado solo cambia al final. Si la función muere a medias, el siguiente intento repite el turno.
 - El navegador llama a `POST /api/runs/:id/step` en bucle y sondea `GET /api/runs/:id?after=<últimoEvento>` cada 1,2 s. Si cierras la pestaña, al volver a abrirla la ejecución continúa donde estaba.
-- Si el proveedor de IA devuelve 429 (cuota gratuita), la ejecución se pausa y se reanuda sola; en pantalla el agente pasa a «Esperando cuota de IA».
+- Los planes gratuitos de IA fallan a ratos: cuota agotada (429) o modelo saturado (503). `LLM_MODEL` admite una cadena de modelos (principal y reservas) y, si ninguno responde, la ejecución se pausa con espera creciente y se reanuda sola; en pantalla el agente pasa a «Esperando a la IA». Tras 30 esperas seguidas se detiene y ofrece reintentar. Opcionalmente, `LLM_FALLBACK_*` añade un segundo proveedor.
 
 ### Modelo de datos
 
@@ -97,13 +97,13 @@ Ninguna clave está en el repositorio: viven en `.env.local` (ignorado por git) 
 | `DATABASE_URL` | Postgres de Neon. En Vercel la inyecta la integración del Marketplace |
 | `AUTH_SECRET` | Firma de la cookie de sesión (JWT HS256, `httpOnly`) |
 | `DEMO_USER`, `DEMO_PASSWORD` | Usuario de prueba que crea `npm run db:seed` |
-| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | Cualquier API compatible con OpenAI con plan gratuito (Gemini, Groq, Mistral…) |
+| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | Cualquier API compatible con OpenAI con plan gratuito (Gemini, Groq, Mistral…). `LLM_MODEL` puede ser una lista separada por comas |
 
 ## Todo en planes gratuitos
 
 - **Vercel Hobby** para la app.
 - **Neon Free** para Postgres.
-- **IA:** plan gratuito del proveedor configurado en `LLM_*`. El primer intento fue Vercel AI Gateway, pero exige una tarjeta para liberar el crédito gratuito, así que la app habla con cualquier API compatible con OpenAI y la clave se elige por entorno.
+- **IA:** plan gratuito de Gemini (Google AI Studio, sin tarjeta), modelos Flash-Lite. El primer intento fue Vercel AI Gateway, pero exige una tarjeta para liberar el crédito gratuito, así que la app habla con cualquier API compatible con OpenAI y el proveedor se elige por entorno con `LLM_*`.
 - Para proteger esa cuota: acceso con usuario de prueba y un tope diario de peticiones (`MAX_RUNS_PER_DAY`).
 
 ## Seguridad

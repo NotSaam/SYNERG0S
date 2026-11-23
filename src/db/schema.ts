@@ -35,9 +35,11 @@ export const runs = pgTable(
     activity: text("activity"),
     /** Cerrojo: solo una invocación avanza la ejecución a la vez. */
     lockUntil: timestamp("lock_until", { withTimezone: true }),
-    /** Pausa por límite de cuota del proveedor de IA. */
+    /** Pausa porque el proveedor de IA está sin cuota o saturado. */
     waitUntil: timestamp("wait_until", { withTimezone: true }),
     retries: integer("retries").notNull().default(0),
+    /** Esperas seguidas al proveedor de IA; se pone a cero cuando un paso termina. */
+    busyWaits: integer("busy_waits").notNull().default(0),
     error: text("error"),
     summary: text("summary"),
     llmCalls: integer("llm_calls").notNull().default(0),
