@@ -74,7 +74,9 @@ export function Logo() {
       <span className="grid h-7 w-7 place-items-center rounded-md border border-accent/40 bg-accent/10 text-accent">
         <AgentGlyph agent="orchestrator" className="h-4 w-4" />
       </span>
-      SYNERG<span className="text-accent">0</span>S
+      <span>
+        SYNERG<span className="text-accent">0</span>S
+      </span>
     </Link>
   );
 }
