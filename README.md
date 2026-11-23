@@ -97,13 +97,14 @@ Ninguna clave está en el repositorio: viven en `.env.local` (ignorado por git) 
 | `DATABASE_URL` | Postgres de Neon. En Vercel la inyecta la integración del Marketplace |
 | `AUTH_SECRET` | Firma de la cookie de sesión (JWT HS256, `httpOnly`) |
 | `DEMO_USER`, `DEMO_PASSWORD` | Usuario de prueba que crea `npm run db:seed` |
-| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | Cualquier API compatible con OpenAI con plan gratuito (Gemini, Groq, Mistral…). `LLM_MODEL` puede ser una lista separada por comas |
+| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | Cualquier API compatible con OpenAI con plan gratuito (Gemini, Groq, Mistral…). `LLM_MODEL` puede ser una lista separada por comas, cada modelo con su esfuerzo de razonamiento opcional (`modelo@none`) |
 
 ## Todo en planes gratuitos
 
 - **Vercel Hobby** para la app.
 - **Neon Free** para Postgres.
-- **IA:** plan gratuito de Gemini (Google AI Studio, sin tarjeta), modelos Flash-Lite. El primer intento fue Vercel AI Gateway, pero exige una tarjeta para liberar el crédito gratuito, así que la app habla con cualquier API compatible con OpenAI y el proveedor se elige por entorno con `LLM_*`.
+- **IA:** plan gratuito de Gemini (Google AI Studio, sin tarjeta). El primer intento fue Vercel AI Gateway, pero exige una tarjeta para liberar el crédito gratuito, así que la app habla con cualquier API compatible con OpenAI y el proveedor se elige por entorno con `LLM_*`.
+- **Lo que da de sí la cuota gratuita:** los modelos Flash admiten 20 peticiones al día cada uno y los Flash-Lite, más, pero en horas punta responden 503. Una petición al equipo son entre 10 y 15 llamadas, así que la app encadena varios modelos (`LLM_MODEL=modelo@nivel,…`) y pasa al siguiente cuando uno está sin cuota o saturado. Si la demo muestra «Esperando a la IA», es esto: sigue sola en cuanto algún modelo responde.
 - Para proteger esa cuota: acceso con usuario de prueba y un tope diario de peticiones (`MAX_RUNS_PER_DAY`).
 
 ## Seguridad
@@ -128,6 +129,7 @@ Todo el proyecto se programó con **Claude Code** (app de escritorio) en una sol
 2. **Documentación antes que memoria.** Next.js 16 y AI SDK 7 cambian APIs respecto a versiones anteriores, así que antes de escribir leyó la documentación que viene dentro de `node_modules` (`next/dist/docs`, `ai/docs`): `proxy.ts` en lugar de `middleware.ts`, `generateText` con `Output.object`, Cache Components con `<Suspense>`.
 3. **Infraestructura desde la terminal.** Creó el proyecto en Vercel con la CLI, aprovisionó Neon desde el Marketplace y comprobó con una llamada real que AI Gateway pedía tarjeta antes de descartarlo.
 4. **Verificación.** Typecheck, build de producción, tests unitarios del banco de pruebas y una ejecución completa en el navegador antes de dar nada por hecho.
-5. **Secretos.** Las claves se generaron y guardaron con `vercel env`, nunca en archivos versionados.
+5. **Depuración con datos, no con suposiciones.** En la primera ejecución real Develop no recibía respuesta. Claude Code midió cada modelo con peticiones cortas y largas y encontró tres causas distintas: los Flash-Lite devolvían 503 en las respuestas largas, los Flash tardaban más de 40 s por razonar y además tienen 20 peticiones al día. De ahí salieron la cadena de modelos, el razonamiento configurable por modelo y la pausa con reintento en lugar de dar la ejecución por fallida.
+6. **Secretos.** Las claves se generaron y guardaron con `vercel env`, nunca en archivos versionados.
 
 Mi papel fue dar el encargo, aceptar los pasos que requerían mi cuenta (términos de Neon, clave del proveedor de IA), revisar el resultado y decidir qué entregar.

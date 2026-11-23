@@ -7,13 +7,15 @@ import type { z } from "zod";
  *
  *  - LLM_API_KEY + LLM_BASE_URL + LLM_MODEL → cualquier API compatible con OpenAI
  *    con plan gratuito (Groq, Cerebras, Mistral, Gemini, OpenRouter…).
- *    LLM_MODEL puede ser una lista separada por comas (principal y reservas).
+ *    LLM_MODEL puede ser una lista separada por comas (principal y reservas). Cada modelo admite
+ *    un sufijo «@nivel» con su esfuerzo de razonamiento: «gemini-3.6-flash@none,otro@minimal».
  *  - LLM_FALLBACK_API_KEY + LLM_FALLBACK_BASE_URL + LLM_FALLBACK_MODEL → segundo proveedor opcional.
  *  - Si no hay LLM_API_KEY → Vercel AI Gateway (AI_GATEWAY_MODEL, autenticado por OIDC).
  */
 interface Candidate {
   model: LanguageModel;
   label: string;
+  providerOptions?: Record<string, { reasoningEffort: string }>;
 }
 
 function fromEnv(prefix: "LLM" | "LLM_FALLBACK"): Candidate[] {
@@ -24,13 +26,24 @@ function fromEnv(prefix: "LLM" | "LLM_FALLBACK"): Candidate[] {
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+  const name = prefix.toLowerCase();
+  // En modelos con razonamiento, bajarlo acorta mucho la respuesta. Los valores válidos cambian
+  // de un modelo a otro, así que se indica por modelo («id@nivel») o con un valor por defecto.
+  const defaultEffort = process.env[`${prefix}_REASONING_EFFORT`];
   const provider = createOpenAICompatible({
-    name: prefix.toLowerCase(),
+    name,
     apiKey,
     baseURL,
     supportsStructuredOutputs: process.env[`${prefix}_STRUCTURED_OUTPUTS`] === "true",
   });
-  return ids.map((id) => ({ model: provider(id), label: id }));
+  return ids.map((entry) => {
+    const [id, effort = defaultEffort] = entry.split("@");
+    return {
+      model: provider(id),
+      label: id,
+      providerOptions: effort ? { [name]: { reasoningEffort: effort } } : undefined,
+    };
+  });
 }
 
 /**
@@ -86,6 +99,7 @@ export async function callAgent<T>(opts: {
   const candidates = resolveModels();
   const startedAt = Date.now();
   let busy: ProviderBusyError | null = null;
+  let rejected: unknown = null;
 
   for (const candidate of candidates) {
     const left = CALL_BUDGET_MS - (Date.now() - startedAt);
@@ -100,6 +114,7 @@ export async function callAgent<T>(opts: {
         maxOutputTokens: opts.maxOutputTokens ?? 4000,
         temperature: opts.temperature ?? 0.2,
         maxRetries: 0,
+        providerOptions: candidate.providerOptions,
         abortSignal: AbortSignal.timeout(Math.min(CALL_TIMEOUT_MS, left)),
       });
       return {
@@ -113,12 +128,20 @@ export async function callAgent<T>(opts: {
       console.warn(
         `[llm] ${candidate.label} falló en ${Date.now() - attemptAt} ms: ${describe(err)}`,
       );
-      if (!asBusy) throw err;
-      // De varios motivos se conserva «saturado»: es el que se resuelve antes.
-      if (!busy || asBusy.reason === "overloaded") busy = asBusy;
+      if (asBusy) {
+        // De varios motivos se conserva «saturado»: es el que se resuelve antes.
+        if (!busy || asBusy.reason === "overloaded") busy = asBusy;
+      } else if (isRejection(err)) {
+        // El modelo rechaza la petición (4xx): puede que otro de la cadena sí la acepte.
+        rejected = err;
+      } else {
+        throw err;
+      }
     }
   }
-  throw busy ?? new ProviderBusyError("overloaded", 5_000);
+  if (busy) throw busy;
+  if (rejected) throw rejected;
+  throw new ProviderBusyError("overloaded", 5_000);
 }
 
 function toBusy(err: unknown): ProviderBusyError | null {
@@ -134,6 +157,13 @@ function toBusy(err: unknown): ProviderBusyError | null {
   }
   if (status >= 500) return new ProviderBusyError("overloaded", 5_000);
   return null;
+}
+
+function isRejection(err: unknown): boolean {
+  const cause = RetryError.isInstance(err) ? err.lastError : err;
+  if (!APICallError.isInstance(cause)) return false;
+  const status = cause.statusCode ?? 0;
+  return status >= 400 && status < 500 && status !== 429;
 }
 
 function isTimeout(err: unknown): boolean {
