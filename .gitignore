@@ -49,5 +49,6 @@ next-env.d.ts
 # notas locales de la entrega
 ENTREGA.md
 
-# herramientas locales
-.claude/
+# herramientas locales (los .md de los agentes sí se versionan)
+.claude/*
+!.claude/agents/

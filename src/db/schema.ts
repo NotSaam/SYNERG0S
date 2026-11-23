@@ -12,12 +12,14 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Assertion, TestReport } from "@/lib/types";
 
+// RLS activada y sin políticas en todas las tablas: Supabase expone `public` por su API de datos y así la clave anónima no lee ni escribe; la app entra como propietaria y no le afecta.
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}).enableRLS();
 
 /** Una petición del usuario y todo el trabajo que desencadena. */
 export const runs = pgTable(
@@ -51,7 +53,7 @@ export const runs = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [index("runs_user_idx").on(t.userId, t.createdAt)],
-);
+).enableRLS();
 
 export const tasks = pgTable(
   "tasks",
@@ -77,7 +79,7 @@ export const tasks = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("tasks_run_idx").on(t.runId, t.position)],
-);
+).enableRLS();
 
 /** Bitácora: cada cosa que hace un agente queda aquí y se pinta en pantalla. */
 export const events = pgTable(
@@ -97,7 +99,7 @@ export const events = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("events_run_idx").on(t.runId, t.id)],
-);
+).enableRLS();
 
 /** Espacio de trabajo virtual: los archivos de la web sobre la que trabajan los agentes. */
 export const files = pgTable(
@@ -112,7 +114,7 @@ export const files = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.runId, t.path] })],
-);
+).enableRLS();
 
 export type Run = typeof runs.$inferSelect;
 export type Task = typeof tasks.$inferSelect;

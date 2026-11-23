@@ -14,10 +14,13 @@ async function main() {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  await getDb()
+  const db = getDb();
+  await db
     .insert(users)
     .values({ username, passwordHash })
     .onConflictDoUpdate({ target: users.username, set: { passwordHash } });
+  // Con postgres.js el proceso no termina mientras el pool siga abierto.
+  await db.$client.end();
 
   console.log(`Usuario de prueba «${username}» listo.`);
 }
