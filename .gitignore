@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# plantilla de entorno (sin secretos)
+!.env.example
+
+# notas locales de la entrega
+ENTREGA.md
+
+# herramientas locales
+.claude/
